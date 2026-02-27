@@ -10,7 +10,7 @@ tags:
 ---
 
 > [!nav] Navigation
-> **Domain Specs:** (none yet)
+> **Domain Specs:** [[mvp/spec|MVP Spec]]
 
 # Supabase Watchdog — Vision Specification
 

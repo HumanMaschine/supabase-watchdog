@@ -1,0 +1,48 @@
+# Supabase Watchdog Configuration
+# Copy this file to watchdog.config.yaml and fill in your values.
+
+supabase:
+  # Personal access token from https://supabase.com/dashboard/account/tokens
+  # Use an environment variable — never paste the token directly.
+  access_token: "${SUPABASE_ACCESS_TOKEN}"
+
+projects:
+  # Add one entry per Supabase project you want to monitor.
+  # The ref is the 12-character project ID from your project URL.
+  - ref: "your-project-ref"
+    name: "my-project"
+  # - ref: "another-ref-here"
+  #   name: "my-other-project"
+  #   severity: "critical"  # optional: only alert on critical errors
+
+polling:
+  # How often to check for new errors. Minimum: 1m.
+  interval: "5m"
+  # Which Supabase log sources to monitor.
+  sources:
+    - edge_logs
+    - auth_logs
+    - postgres_logs
+    - storage_logs
+    - realtime_logs
+    - postgrest_logs
+    # - supavisor_logs  # uncomment if needed
+
+filters:
+  # Only alert on HTTP status codes >= this value.
+  min_status_code: 500
+  # Errors matching these patterns are silently dropped.
+  ignore_patterns:
+    - "healthcheck"
+    - "favicon.ico"
+  # Maximum alerts per polling interval (prevents message floods).
+  max_alerts_per_interval: 20
+
+channels:
+  telegram:
+    # Create a bot via @BotFather and paste the token here.
+    bot_token: "${TELEGRAM_BOT_TOKEN}"
+    # Chat or group ID where alerts will be sent.
+    # Tip: send a message to your bot, then visit
+    # https://api.telegram.org/bot<TOKEN>/getUpdates to find the chat_id.
+    chat_id: "${TELEGRAM_CHAT_ID}"
