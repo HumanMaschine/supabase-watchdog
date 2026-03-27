@@ -49,16 +49,24 @@ function computeHealthStatus(
 // ── Template rendering ───────────────────────────────────────────────
 
 async function loadTemplate(name: string): Promise<string> {
-  const path = new URL(`./${name}`, import.meta.url).pathname;
-  return await Deno.readTextFile(path);
+  // Use dirname of import.meta.url to resolve relative to this file.
+  // Works on both local Deno and Deno Deploy.
+  const url = new URL(`./${name}`, import.meta.url);
+  if (url.protocol === "file:") {
+    return await Deno.readTextFile(url.pathname);
+  }
+  // On Deno Deploy, import.meta.url is https:// — fetch the file
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Failed to load template: ${name}`);
+  return await resp.text();
 }
 
 function renderTemplate(template: string, vars: Record<string, string>): string {
-  let result = template;
-  for (const [key, value] of Object.entries(vars)) {
-    result = result.replaceAll(`{{${key}}}`, value);
-  }
-  return result;
+  // Single-pass replacement to prevent double-substitution attacks.
+  // If a value contains "{{OTHER_KEY}}", it must not be re-expanded.
+  return template.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => {
+    return vars[key] ?? "";
+  });
 }
 
 // ── Setup page rendering ─────────────────────────────────────────────
@@ -302,20 +310,32 @@ function checkAuth(request: Request, dashboardToken: string | undefined): Respon
   if (!dashboardToken) return null; // No auth configured
 
   const url = new URL(request.url);
+
+  // Exempt paths — check BEFORE token comparison to avoid leaking timing info
+  if (url.pathname === "/healthz") return null;
+  if (url.pathname === "/telegram-webhook") return null;
+
   const queryToken = url.searchParams.get("token");
   const authHeader = request.headers.get("authorization");
   const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
 
-  if (queryToken === dashboardToken || bearerToken === dashboardToken) {
+  const token = queryToken || bearerToken || "";
+  if (timingSafeEqualStr(token, dashboardToken)) {
     return null; // Auth passed
   }
 
-  // /healthz is always accessible (for external monitors)
-  if (url.pathname === "/healthz") return null;
-  // Webhook endpoint uses its own auth (Telegram secret token)
-  if (url.pathname === "/telegram-webhook") return null;
-
   return new Response("Unauthorized", { status: 401 });
+}
+
+function timingSafeEqualStr(a: string, b: string): boolean {
+  const encoder = new TextEncoder();
+  const bufA = encoder.encode(a.padEnd(64));
+  const bufB = encoder.encode(b.padEnd(64));
+  let result = 0;
+  for (let i = 0; i < Math.max(bufA.length, bufB.length); i++) {
+    result |= (bufA[i] ?? 0) ^ (bufB[i] ?? 0);
+  }
+  return a.length === b.length && result === 0;
 }
 
 // ── Server ───────────────────────────────────────────────────────────
