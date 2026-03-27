@@ -95,21 +95,13 @@ if (!result.configured) {
   // Schedule cron
   const cronExpression = intervalToCron(config.polling.interval);
   Deno.cron("watchdog-poll", cronExpression, async () => {
-    const result = await runPollCycle(source, processor, channel, state, lastPollTime);
+    const result = await runPollCycle(source, processor, channel, state, lastPollTime, config);
     lastPollTime = result.newLastPollTime;
-
-    // Update health for each configured project/source
-    for (const project of config.projects) {
-      for (const src of config.polling.sources) {
-        const hasFailure = result.errorsFound > 0; // Simplified — per-source health would need source-level tracking
-        await state.updateHealth(project.ref, src, !hasFailure);
-      }
-    }
   });
 
   log.info("cron_scheduled", { expression: cronExpression });
 
   // Initial poll
-  const initial = await runPollCycle(source, processor, channel, state, lastPollTime);
+  const initial = await runPollCycle(source, processor, channel, state, lastPollTime, config);
   lastPollTime = initial.newLastPollTime;
 }

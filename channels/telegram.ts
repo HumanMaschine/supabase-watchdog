@@ -14,6 +14,19 @@ const TELEGRAM_API = "https://api.telegram.org";
 const MAX_MESSAGE_LENGTH = 4096;
 const RATE_LIMIT_DELAY_MS = 3000; // ~20 msg/min = 1 msg per 3s
 
+/** Constant-time string comparison to prevent timing attacks on secrets. */
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  const encoder = new TextEncoder();
+  const bufA = encoder.encode(a);
+  const bufB = encoder.encode(b);
+  let result = 0;
+  for (let i = 0; i < bufA.length; i++) {
+    result |= bufA[i]! ^ bufB[i]!;
+  }
+  return result === 0;
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -203,9 +216,9 @@ export class TelegramChannel implements Channel {
     secretHeader: string | null,
     state: WatchdogState,
   ): Promise<{ status: number }> {
-    // Verify secret
+    // Verify secret (constant-time comparison)
     const expectedSecret = await this.deriveWebhookSecret();
-    if (secretHeader !== expectedSecret) {
+    if (!secretHeader || !timingSafeEqual(secretHeader, expectedSecret)) {
       log.warn("webhook_invalid_secret");
       return { status: 403 };
     }
@@ -232,7 +245,8 @@ export class TelegramChannel implements Channel {
   /** Delete the webhook (for cleanup or mode switch). */
   async deleteWebhook(): Promise<void> {
     const url = `${TELEGRAM_API}/bot${this.botToken}/deleteWebhook`;
-    await fetch(url, { method: "POST" });
+    const resp = await fetch(url, { method: "POST" });
+    await resp.text(); // consume body to prevent resource leak
     log.info("telegram_webhook_deleted");
   }
 

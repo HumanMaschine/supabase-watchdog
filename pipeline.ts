@@ -1,4 +1,4 @@
-import type { ErrorEvent, PollCycleRecord, Source, Processor, Channel } from "./types.ts";
+import type { ErrorEvent, PollCycleRecord, Source, Processor, Channel, WatchdogConfig } from "./types.ts";
 import type { WatchdogState } from "./state.ts";
 import { parseDuration } from "./config.ts";
 import { log } from "./logger.ts";
@@ -42,6 +42,7 @@ export async function runPollCycle(
   channel: Channel,
   state: WatchdogState,
   lastPollTime: Date,
+  config?: WatchdogConfig,
 ): Promise<{ newLastPollTime: Date; errorsFound: number; alertsSent: number }> {
   const cycleStart = new Date();
   log.info("poll_cycle_started", { time: cycleStart.toISOString() });
@@ -50,6 +51,8 @@ export async function runPollCycle(
   let alertsSent = 0;
   let ok = true;
   const failures: PollCycleRecord["failures"] = [];
+  // Track which project:source pairs had errors (for per-source health matrix)
+  const errorSources = new Set<string>();
 
   try {
     // 1. Poll
@@ -66,6 +69,11 @@ export async function runPollCycle(
     }
 
     errorsFound = unique.length;
+
+    // Track which sources had errors (for health matrix)
+    for (const event of unique) {
+      errorSources.add(`${event.projectRef}:${event.source}`);
+    }
 
     // 3. Process
     const processed = await processor.process(unique);
@@ -90,6 +98,17 @@ export async function runPollCycle(
 
   const cycleEnd = new Date();
   const durationMs = cycleEnd.getTime() - cycleStart.getTime();
+
+  // Update per-source health in KV
+  if (config) {
+    for (const project of config.projects) {
+      for (const src of config.polling.sources) {
+        const key = `${project.ref}:${src}`;
+        const sourceOk = !errorSources.has(key);
+        await state.updateHealth(project.ref, src, sourceOk);
+      }
+    }
+  }
 
   // Log to KV
   const record: PollCycleRecord = {
