@@ -139,13 +139,14 @@ Build and run with Docker:
 # Build the image
 docker build -t supabase-watchdog .
 
-# Run with env vars and mounted config
+# Run with env vars, mounted config, and persistent KV storage
 docker run -d \
   --name watchdog \
   -e SUPABASE_ACCESS_TOKEN=sbp_... \
   -e TELEGRAM_BOT_TOKEN=123456:ABC... \
   -e TELEGRAM_CHAT_ID=-100... \
   -v ./watchdog.config.yaml:/app/watchdog.config.yaml:ro \
+  -v watchdog-data:/app/.deno-kv \
   supabase-watchdog
 ```
 
@@ -162,7 +163,13 @@ services:
       - TELEGRAM_CHAT_ID=-100...
     volumes:
       - ./watchdog.config.yaml:/app/watchdog.config.yaml:ro
+      - watchdog-data:/app/.deno-kv
+
+volumes:
+  watchdog-data:
 ```
+
+> **Note:** The `watchdog-data` volume persists poll history, dedup state, and health status across container restarts. Without it, KV data resets on every restart.
 
 ```bash
 docker compose up -d
