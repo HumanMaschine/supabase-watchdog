@@ -6,7 +6,9 @@ import type {
   Source,
   WatchdogConfig,
 } from "../types.ts";
+import type { WatchdogState } from "../state.ts";
 import { parseDuration } from "../config.ts";
+import { log } from "../logger.ts";
 
 const TELEGRAM_API = "https://api.telegram.org";
 const MAX_MESSAGE_LENGTH = 4096;
@@ -162,12 +164,84 @@ export class TelegramChannel implements Channel {
     }
   }
 
-  // --- Bot polling ---
+  // --- Bot startup ---
 
   startPolling(deps: BotDeps): void {
     this.deps = deps;
     this.pollUpdates();
-    console.log("[watchdog] Telegram bot polling started");
+    log.info("telegram_polling_started");
+  }
+
+  /** Set up Telegram webhook. Call once on startup in webhook mode. */
+  async setupWebhook(deps: BotDeps, baseUrl: string): Promise<void> {
+    this.deps = deps;
+    const webhookSecret = await this.deriveWebhookSecret();
+    const webhookUrl = `${baseUrl}/telegram-webhook`;
+
+    const url = `${TELEGRAM_API}/bot${this.botToken}/setWebhook`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: webhookUrl,
+        secret_token: webhookSecret,
+        allowed_updates: ["message"],
+      }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`setWebhook failed (${response.status}): ${body}`);
+    }
+
+    log.info("telegram_webhook_set", { url: webhookUrl });
+  }
+
+  /** Handle an incoming webhook update from Telegram. */
+  async handleWebhookUpdate(
+    update: TelegramUpdate,
+    secretHeader: string | null,
+    state: WatchdogState,
+  ): Promise<{ status: number }> {
+    // Verify secret
+    const expectedSecret = await this.deriveWebhookSecret();
+    if (secretHeader !== expectedSecret) {
+      log.warn("webhook_invalid_secret");
+      return { status: 403 };
+    }
+
+    // Dedup by update_id
+    const lastUpdateId = await state.getLastUpdateId();
+    if (update.update_id <= lastUpdateId) {
+      return { status: 200 }; // Already processed, idempotent
+    }
+
+    await state.setLastUpdateId(update.update_id);
+
+    // Dispatch command (fire-and-forget for expensive commands)
+    if (update.message?.text) {
+      // Don't await — return 200 to Telegram immediately
+      this.handleCommand(update.message).catch((err) => {
+        log.error("webhook_command_error", { error: String(err) });
+      });
+    }
+
+    return { status: 200 };
+  }
+
+  /** Delete the webhook (for cleanup or mode switch). */
+  async deleteWebhook(): Promise<void> {
+    const url = `${TELEGRAM_API}/bot${this.botToken}/deleteWebhook`;
+    await fetch(url, { method: "POST" });
+    log.info("telegram_webhook_deleted");
+  }
+
+  private async deriveWebhookSecret(): Promise<string> {
+    const data = new TextEncoder().encode(this.botToken + "watchdog");
+    const hash = await crypto.subtle.digest("SHA-256", data);
+    return Array.from(new Uint8Array(hash))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
   }
 
   private async pollUpdates(): Promise<void> {
@@ -181,7 +255,7 @@ export class TelegramChannel implements Channel {
           }
         }
       } catch (error) {
-        console.warn(`[watchdog] Bot polling error: ${error}`);
+        log.warn("bot_polling_error", { error: String(error) });
         await delay(5000);
       }
     }
@@ -246,7 +320,7 @@ export class TelegramChannel implements Channel {
           );
       }
     } catch (error) {
-      console.error(`[watchdog] Command ${command} failed: ${error}`);
+      log.error("command_failed", { command, error: String(error) });
       await this.sendMessageTo(
         chatId,
         `Command failed: ${escapeHtml(String(error))}`,
@@ -402,9 +476,7 @@ export class TelegramChannel implements Channel {
 
     if (!response.ok) {
       const body = await response.text();
-      console.warn(
-        `[watchdog] Telegram sendMessage failed (${response.status}): ${body}`,
-      );
+      log.warn("telegram_send_failed", { status: response.status, body });
     }
   }
 

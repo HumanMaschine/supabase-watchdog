@@ -8,8 +8,9 @@
     "@std/fs": "jsr:@std/fs@^1"
   },
   "tasks": {
-    "dev": "deno run --allow-read --allow-env --allow-net --unstable-cron --watch main.ts",
-    "start": "deno run --allow-read --allow-env --allow-net --unstable-cron main.ts",
+    "dev": "deno run --allow-read --allow-env --allow-net --unstable-cron --unstable-kv --watch main.ts",
+    "start": "deno run --allow-read --allow-env --allow-net --unstable-cron --unstable-kv main.ts",
+    "test": "deno test --allow-read --allow-env --allow-net --unstable-kv",
     "deploy": "deployctl deploy --prod main.ts"
   }
 }
