@@ -51,8 +51,6 @@ export async function runPollCycle(
   let alertsSent = 0;
   let ok = true;
   const failures: PollCycleRecord["failures"] = [];
-  // Track which project:source pairs had errors (for per-source health matrix)
-  const errorSources = new Set<string>();
 
   try {
     // 1. Poll
@@ -69,11 +67,6 @@ export async function runPollCycle(
     }
 
     errorsFound = unique.length;
-
-    // Track which sources had errors (for health matrix)
-    for (const event of unique) {
-      errorSources.add(`${event.projectRef}:${event.source}`);
-    }
 
     // 3. Process
     const processed = await processor.process(unique);
@@ -99,13 +92,12 @@ export async function runPollCycle(
   const cycleEnd = new Date();
   const durationMs = cycleEnd.getTime() - cycleStart.getTime();
 
-  // Update per-source health in KV
+  // Update health matrix: all sources healthy if poll succeeded, all unhealthy if it failed.
+  // Per-source health tracking requires source-level error reporting (planned for v0.3).
   if (config) {
     for (const project of config.projects) {
       for (const src of config.polling.sources) {
-        const key = `${project.ref}:${src}`;
-        const sourceOk = !errorSources.has(key);
-        await state.updateHealth(project.ref, src, sourceOk);
+        await state.updateHealth(project.ref, src, ok);
       }
     }
   }

@@ -76,6 +76,10 @@ if (!result.configured) {
   if (config.telegram_mode === "webhook" && config.base_url) {
     await channel.setupWebhook(botDeps, config.base_url);
   } else {
+    // Delete any existing webhook before starting polling.
+    // If this bot was previously in webhook mode, Telegram won't
+    // return updates via getUpdates while a webhook is active.
+    await channel.deleteWebhook();
     channel.startPolling(botDeps);
   }
 
