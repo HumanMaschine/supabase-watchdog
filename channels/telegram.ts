@@ -202,8 +202,8 @@ export class TelegramChannel implements Channel {
       }),
     });
 
+    const body = await response.text();
     if (!response.ok) {
-      const body = await response.text();
       throw new Error(`setWebhook failed (${response.status}): ${body}`);
     }
 

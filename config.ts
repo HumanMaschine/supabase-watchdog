@@ -204,6 +204,14 @@ function validate(config: Record<string, unknown>): string[] {
 
 // ── Env-var config builder ──────────────────────────────────────────
 
+function validateInt(value: string, name: string): number {
+  const parsed = parseInt(value, 10);
+  if (isNaN(parsed)) {
+    throw new Error(`${name} must be a number, got "${value}"`);
+  }
+  return parsed;
+}
+
 /** Required env vars for the env-var config path. */
 const REQUIRED_ENV_VARS = [
   "SUPABASE_ACCESS_TOKEN",
@@ -271,7 +279,13 @@ function buildConfigFromEnv(): WatchdogConfig {
   const ignoreRaw = Deno.env.get("WATCHDOG_IGNORE_PATTERNS");
   const maxAlerts = Deno.env.get("WATCHDOG_MAX_ALERTS");
 
-  const telegramMode = (Deno.env.get("WATCHDOG_TELEGRAM_MODE") || "polling") as "webhook" | "polling";
+  const telegramModeRaw = Deno.env.get("WATCHDOG_TELEGRAM_MODE") || "polling";
+  if (telegramModeRaw !== "webhook" && telegramModeRaw !== "polling") {
+    throw new Error(
+      `WATCHDOG_TELEGRAM_MODE must be "webhook" or "polling", got "${telegramModeRaw}"`,
+    );
+  }
+  const telegramMode = telegramModeRaw;
   const baseUrl = Deno.env.get("WATCHDOG_BASE_URL");
   const dashboardToken = Deno.env.get("WATCHDOG_DASHBOARD_TOKEN");
 
@@ -280,10 +294,10 @@ function buildConfigFromEnv(): WatchdogConfig {
     projects,
     polling: { interval, sources },
     filters: {
-      min_status_code: minStatus ? parseInt(minStatus, 10) : DEFAULTS.filters.min_status_code,
+      min_status_code: minStatus ? validateInt(minStatus, "WATCHDOG_MIN_STATUS") : DEFAULTS.filters.min_status_code,
       ignore_patterns: ignoreRaw ? ignoreRaw.split(",").map((s) => s.trim()) : [],
       max_alerts_per_interval: maxAlerts
-        ? parseInt(maxAlerts, 10)
+        ? validateInt(maxAlerts, "WATCHDOG_MAX_ALERTS")
         : DEFAULTS.filters.max_alerts_per_interval,
     },
     channels: {
