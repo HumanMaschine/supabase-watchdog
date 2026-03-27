@@ -20,5 +20,5 @@ WORKDIR /app
 
 COPY --from=builder /app .
 
-# Deno permissions: read config, access env vars, network for API calls
-CMD ["deno", "run", "--allow-read", "--allow-env", "--allow-net", "main.ts"]
+# Deno permissions: read config, access env vars, network for API calls, KV + cron
+CMD ["deno", "run", "--allow-read", "--allow-env", "--allow-net", "--unstable-cron", "--unstable-kv", "main.ts"]
