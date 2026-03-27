@@ -96,4 +96,41 @@ export interface WatchdogConfig {
   polling: PollingConfig;
   filters: FiltersConfig;
   channels: ChannelsConfig;
+  /** Telegram transport mode: "webhook" (Deno Deploy) or "polling" (Docker). */
+  telegram_mode: "webhook" | "polling";
+  /** Public base URL for webhook mode, e.g. "https://my-watchdog.deno.dev". */
+  base_url?: string;
+  /** Optional token to protect the dashboard. If set, requests need ?token= or Authorization header. */
+  dashboard_token?: string;
+}
+
+// ── Config Result ───────────────────────────────────────────────────
+
+/** Result of attempting to load config. Allows graceful setup mode. */
+export type ConfigResult =
+  | { configured: true; config: WatchdogConfig }
+  | { configured: false; missing: string[] };
+
+// ── KV State Types ──────────────────────────────────────────────────
+
+export interface PollCycleRecord {
+  started_at: string;
+  finished_at: string;
+  duration_ms: number;
+  ok: boolean;
+  errors_found: number;
+  alerts_sent: number;
+  failures: { project: string; source: string; error: string }[];
+}
+
+export interface DailyStats {
+  polls: number;
+  errors_found: number;
+  alerts_sent: number;
+}
+
+export interface SourceHealthStatus {
+  last_poll: string;
+  ok: boolean;
+  last_error?: string;
 }

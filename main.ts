@@ -1,116 +1,115 @@
-import { loadConfig, parseDuration } from "./config.ts";
+import { loadConfig } from "./config.ts";
+import { log } from "./logger.ts";
+import { WatchdogState } from "./state.ts";
+import { startServer } from "./server.ts";
+import { runPollCycle, intervalToCron } from "./pipeline.ts";
 import { SupabaseSource } from "./sources/mod.ts";
 import { PassthroughProcessor } from "./processors/mod.ts";
 import { TelegramChannel } from "./channels/mod.ts";
-import type { ErrorEvent } from "./types.ts";
+import { parseDuration } from "./config.ts";
 
-// --- Config & plugin init ---
+// ── Config ───────────────────────────────────────────────────────────
 
-const config = await loadConfig();
+const result = await loadConfig();
 
-const source = new SupabaseSource(config);
-const processor = new PassthroughProcessor();
-const channel = new TelegramChannel(config);
+if (!result.configured) {
+  // SETUP MODE: serve setup page, wait for env vars
+  log.info("setup_mode", { missing: result.missing });
 
-let lastPollTime = new Date();
+  startServer({
+    mode: "setup",
+    missing: result.missing,
+  });
 
-// --- Deduplication ---
+  // Nothing else to start — user needs to add env vars
+} else {
+  // MONITORING MODE: full pipeline + dashboard
+  const config = result.config;
 
-function deduplicateEvents(events: ErrorEvent[]): ErrorEvent[] {
-  const seen = new Set<string>();
-  const unique: ErrorEvent[] = [];
+  log.info("monitoring_mode", {
+    projects: config.projects.length,
+    interval: config.polling.interval,
+    telegram_mode: config.telegram_mode,
+  });
 
-  for (const event of events) {
-    const key = `${event.projectRef}:${event.source}:${event.message}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      unique.push(event);
-    }
-  }
-
-  return unique;
-}
-
-// --- Core pipeline ---
-
-async function runPollCycle(): Promise<void> {
-  const cycleStart = new Date();
-  console.log(`[watchdog] Poll cycle started at ${cycleStart.toISOString()}`);
-
+  // Token validation
   try {
-    // 1. Poll
-    const events = await source.poll(lastPollTime);
-    console.log(`[watchdog] Polled ${events.length} error(s)`);
-
-    // 2. Deduplicate
-    const unique = deduplicateEvents(events);
-    if (unique.length < events.length) {
-      console.log(
-        `[watchdog] Deduplicated: ${events.length} → ${unique.length} event(s)`,
-      );
-    }
-
-    // 3. Process
-    const processed = await processor.process(unique);
-
-    // 4. Send
-    if (processed.length > 0) {
-      await channel.send(processed);
-      console.log(`[watchdog] Sent ${processed.length} alert(s)`);
+    const resp = await fetch("https://api.supabase.com/v1/projects", {
+      headers: { Authorization: `Bearer ${config.supabase.access_token}` },
+    });
+    if (!resp.ok) {
+      log.warn("token_validation_failed", { status: resp.status });
     } else {
-      console.log(`[watchdog] No errors found`);
+      log.info("token_validated");
     }
-  } catch (error) {
-    console.error(`[watchdog] Poll cycle failed: ${error}`);
+    // Consume body to prevent leak
+    await resp.text();
+  } catch (err) {
+    log.warn("token_validation_error", { error: String(err) });
   }
 
-  lastPollTime = cycleStart;
+  // Initialize state (KV)
+  const state = new WatchdogState();
+  await state.init();
+
+  // Initialize plugins
+  const source = new SupabaseSource(config);
+  const processor = new PassthroughProcessor();
+  const channel = new TelegramChannel(config);
+
+  // Restore lastPollTime from KV (survives restarts)
+  let lastPollTime = new Date();
+  const storedPoll = await state.getLastPollTime();
+  if (storedPoll) {
+    lastPollTime = new Date(storedPoll.timestamp);
+    log.info("restored_last_poll_time", { timestamp: storedPoll.timestamp });
+  }
+
+  // Set up Telegram (webhook or polling)
+  const botDeps = {
+    source,
+    processor,
+    getLastPollTime: () => lastPollTime,
+    config,
+  };
+
+  if (config.telegram_mode === "webhook" && config.base_url) {
+    await channel.setupWebhook(botDeps, config.base_url);
+  } else {
+    channel.startPolling(botDeps);
+  }
+
+  // Start HTTP server
+  startServer({
+    mode: "monitoring",
+    state,
+    config,
+    onTelegramWebhook: config.telegram_mode === "webhook"
+      ? async (update, secretHeader) => {
+          const telegramUpdate = update as { update_id: number; message?: { message_id: number; chat: { id: number }; text?: string } };
+          return await channel.handleWebhookUpdate(telegramUpdate, secretHeader, state);
+        }
+      : undefined,
+  });
+
+  // Schedule cron
+  const cronExpression = intervalToCron(config.polling.interval);
+  Deno.cron("watchdog-poll", cronExpression, async () => {
+    const result = await runPollCycle(source, processor, channel, state, lastPollTime);
+    lastPollTime = result.newLastPollTime;
+
+    // Update health for each configured project/source
+    for (const project of config.projects) {
+      for (const src of config.polling.sources) {
+        const hasFailure = result.errorsFound > 0; // Simplified — per-source health would need source-level tracking
+        await state.updateHealth(project.ref, src, !hasFailure);
+      }
+    }
+  });
+
+  log.info("cron_scheduled", { expression: cronExpression });
+
+  // Initial poll
+  const initial = await runPollCycle(source, processor, channel, state, lastPollTime);
+  lastPollTime = initial.newLastPollTime;
 }
-
-// --- Cron scheduling ---
-
-function intervalToCron(interval: string): string {
-  const ms = parseDuration(interval);
-  const minutes = Math.round(ms / 60_000);
-
-  if (minutes < 1) {
-    throw new Error("Polling interval must be at least 1 minute");
-  }
-
-  if (minutes < 60) {
-    return `*/${minutes} * * * *`;
-  }
-
-  if (minutes % 60 !== 0) {
-    throw new Error(
-      `Polling interval "${interval}" (${minutes}m) does not map cleanly to a cron expression. Use 1–59 minutes or multiples of 60 minutes.`,
-    );
-  }
-
-  const hours = minutes / 60;
-  return `0 */${hours} * * *`;
-}
-
-const cronExpression = intervalToCron(config.polling.interval);
-
-Deno.cron("watchdog-poll", cronExpression, async () => {
-  await runPollCycle();
-});
-
-console.log(
-  `[watchdog] Started — monitoring ${config.projects.length} project(s), polling every ${config.polling.interval}`,
-);
-console.log(`[watchdog] Cron scheduled: ${cronExpression}`);
-
-// --- Initial poll ---
-
-await runPollCycle();
-
-// --- Bot polling ---
-
-channel.startPolling({
-  source,
-  processor,
-  getLastPollTime: () => lastPollTime,
-  config,
-});

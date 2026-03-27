@@ -1,41 +1,55 @@
 # Supabase Watchdog
 
-Lightweight error monitoring for Supabase projects. Polls the Supabase Management API for error-level events across all services and delivers alerts to Telegram.
+Lightweight error monitoring for Supabase projects. Polls the Supabase Management API for error-level events across all services and delivers alerts to Telegram. Includes a status dashboard and one-click deploy.
 
 Built for Pro-plan users who need alerting without a $599+/month Team plan.
 
+[![Deploy to Deno Deploy](https://deno.com/deno-deploy-button.svg)](https://dash.deno.com/new?url=https://github.com/HumanMaschine/supabase-watchdog&entrypoint=main.ts)
+
 ## Features
 
-- Monitors all Supabase log sources: Edge Functions, Auth, Postgres, Storage, Realtime, API Gateway
-- Configurable polling intervals, severity filters, and ignore patterns
+- Monitors all Supabase log sources: Edge Functions, Auth, Postgres, Storage, Realtime, API Gateway, Supavisor
+- Status dashboard with health matrix, poll history, and daily stats
+- `/healthz` JSON endpoint for external monitoring
 - Telegram alerts with HTML formatting and rate limiting
 - Interactive bot commands (`/check`, `/errors`, `/status`, `/help`)
-- Deduplication to avoid repeat alerts
-- YAML configuration with environment variable interpolation
-- Runs on Deno Deploy, Docker, or any Deno runtime
+- Cross-restart deduplication via Deno KV persistence
+- Webhook support for Deno Deploy (auto or explicit mode)
+- Two config paths: YAML for Docker, environment variables for Deno Deploy
+- One-click deploy to Deno Deploy with guided setup page
+- Dark mode (follows OS preference)
 
-## Quick Start
+## Quick Start — Deno Deploy (Recommended)
 
-1. **Clone the repository**
+1. Click the **Deploy to Deno Deploy** button above
+2. The app starts and shows a setup page at your deploy URL
+3. Add environment variables in the Deno Deploy dashboard:
+   - `SUPABASE_ACCESS_TOKEN` — [get it here](https://supabase.com/dashboard/account/tokens)
+   - `TELEGRAM_BOT_TOKEN` — [create via @BotFather](https://t.me/BotFather)
+   - `TELEGRAM_CHAT_ID` — [find via @userinfobot](https://t.me/userinfobot)
+   - `WATCHDOG_PROJECTS` — format: `ref:name,ref:name`
+   - `WATCHDOG_TELEGRAM_MODE` — set to `webhook` for Deno Deploy
+   - `WATCHDOG_BASE_URL` — your deploy URL (e.g. `https://your-app.deno.dev`)
+4. The app restarts automatically and begins monitoring
+
+## Quick Start — Docker / Local
+
+1. **Clone and configure**
    ```bash
-   git clone https://github.com/yourusername/supabase-watchdog
+   git clone https://github.com/HumanMaschine/supabase-watchdog
    cd supabase-watchdog
-   ```
-
-2. **Configure**
-   ```bash
    cp watchdog.config.example.yaml watchdog.config.yaml
    # Edit watchdog.config.yaml with your project refs
    ```
 
-3. **Set environment variables**
+2. **Set environment variables**
    ```bash
    export SUPABASE_ACCESS_TOKEN="sbp_your_token"
    export TELEGRAM_BOT_TOKEN="your_bot_token"
    export TELEGRAM_CHAT_ID="your_chat_id"
    ```
 
-4. **Run**
+3. **Run**
    ```bash
    deno task start
    ```
@@ -185,7 +199,7 @@ All configuration lives in `watchdog.config.yaml`. Environment variables are ref
 | `projects[].name` | string | **required** | Human-readable project name |
 | `projects[].severity` | string | (none) | Minimum severity to alert: `info`, `warning`, `error`, `critical` |
 | `polling.interval` | duration | `"5m"` | Polling frequency (e.g., `"5m"`, `"1h"`) |
-| `polling.sources` | string[] | all 6 sources | Which log sources to query |
+| `polling.sources` | string[] | all 7 sources | Which log sources to query |
 | `filters.min_status_code` | number | `500` | Minimum HTTP status code for errors |
 | `filters.ignore_patterns` | string[] | `[]` | Patterns to exclude (substring match) |
 | `filters.max_alerts_per_interval` | number | `20` | Max alerts per poll cycle |
@@ -200,16 +214,26 @@ All configuration lives in `watchdog.config.yaml`. Environment variables are ref
 - `storage_logs` — Storage
 - `realtime_logs` — Realtime
 - `postgrest_logs` — PostgREST (API Gateway)
+- `supavisor_logs` — Supavisor (connection pooler)
 
 ## Architecture
 
 ```
-Cron trigger → Source.poll() → Deduplicate/Filter → Processor.process() → Channel.send()
+                    ┌─── SETUP MODE: serve setup page at /
+                    │
+main.ts → config → ─┤
+                    │
+                    └─── MONITORING MODE:
+                         ├── Deno.cron() → pipeline.runPollCycle()
+                         │     Source.poll() → Dedup (KV) → Process → Send → Log (KV)
+                         ├── HTTP server: / (dashboard), /healthz, /telegram-webhook
+                         └── Telegram bot (webhook or long-polling)
 ```
 
 - **Sources** (`sources/`) — poll external APIs for errors. Currently: Supabase Management API.
 - **Processors** (`processors/`) — transform/enrich error events. Currently: passthrough.
-- **Channels** (`channels/`) — deliver alerts. Currently: Telegram (alerts + interactive bot commands).
+- **Channels** (`channels/`) — deliver alerts. Telegram (alerts + interactive bot commands).
+- **State** (`state.ts`) — Deno KV persistence for poll history, dedup, health status, daily stats.
 
 ## Troubleshooting
 
@@ -237,7 +261,7 @@ Cron trigger → Source.poll() → Deduplicate/Filter → Processor.process() �
 - **5-minute default polling delay** — not real-time monitoring. Adjust `polling.interval` as needed (minimum 1 minute).
 - **24-hour max query window** — the Supabase Management API only returns logs from the last 24 hours.
 - **120 req/min rate limit** — shared across all Management API consumers in your org.
-- **Telegram only** — MVP supports Telegram as the sole notification channel. Discord and Slack are planned.
+- **Telegram only** — v0.2 supports Telegram as the sole notification channel. Discord, Slack, and webhooks are planned for v0.3.
 
 ## License
 
