@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [0.2.0.0] - 2026-03-30
 
+### Changed (post-release)
+- Moved all source files into `src/` directory, `main.ts` remains at root
+- Moved all test files into `tests/` directory
+- Fixed Deploy to Deno button URL in README
+- Removed `watchdog.config.yaml` from git tracking (was leaking project refs)
+- Updated `.env.example` with all v0.2 environment variables
+
 ### Added
 - Status dashboard at `/` with health matrix, stat cards, recent polls table
 - `/healthz` JSON endpoint for external monitoring (Healthy/Late/Down states)

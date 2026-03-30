@@ -228,7 +228,7 @@ All configuration lives in `watchdog.config.yaml`. Environment variables are ref
 ```
                     ┌─── SETUP MODE: serve setup page at /
                     │
-main.ts → config → ─┤
+main.ts → src/config → ─┤
                     │
                     └─── MONITORING MODE:
                          ├── Deno.cron() → pipeline.runPollCycle()
@@ -237,10 +237,10 @@ main.ts → config → ─┤
                          └── Telegram bot (webhook or long-polling)
 ```
 
-- **Sources** (`sources/`) — poll external APIs for errors. Currently: Supabase Management API.
-- **Processors** (`processors/`) — transform/enrich error events. Currently: passthrough.
-- **Channels** (`channels/`) — deliver alerts. Telegram (alerts + interactive bot commands).
-- **State** (`state.ts`) — Deno KV persistence for poll history, dedup, health status, daily stats.
+- **Sources** (`src/sources/`) — poll external APIs for errors. Currently: Supabase Management API.
+- **Processors** (`src/processors/`) — transform/enrich error events. Currently: passthrough.
+- **Channels** (`src/channels/`) — deliver alerts. Telegram (alerts + interactive bot commands).
+- **State** (`src/state.ts`) — Deno KV persistence for poll history, dedup, health status, daily stats.
 
 ## Troubleshooting
 
@@ -250,7 +250,7 @@ main.ts → config → ─┤
 - If using a group, make sure the bot has permission to read messages (disable privacy mode via BotFather: `/setprivacy` → Disable)
 
 **"environment variable is not set" error on startup**
-- Ensure all three env vars are exported: `SUPABASE_ACCESS_TOKEN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
+- Ensure required env vars are exported: `SUPABASE_ACCESS_TOKEN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `WATCHDOG_PROJECTS` (if not using YAML config)
 - If using Docker, pass them with `-e` flags or in your compose file
 - Check for typos in your `watchdog.config.yaml` `${...}` references
 
