@@ -305,6 +305,12 @@ export class TelegramChannel implements Channel {
     const text = message.text?.trim() ?? "";
     const chatId = String(message.chat.id);
 
+    // Only respond to the configured chat
+    if (chatId !== this.chatId) {
+      log.warn("unauthorized_command", { chatId });
+      return;
+    }
+
     // Only respond to commands (starting with /)
     if (!text.startsWith("/")) return;
 
