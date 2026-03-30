@@ -1,8 +1,8 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { assertThrows } from "https://deno.land/std@0.224.0/assert/assert_throws.ts";
-import { intervalToCron, deduplicateEvents } from "../pipeline.ts";
-import { WatchdogState } from "../state.ts";
-import type { ErrorEvent } from "../types.ts";
+import { intervalToCron, deduplicateEvents } from "../src/pipeline.ts";
+import { WatchdogState } from "../src/state.ts";
+import type { ErrorEvent } from "../src/types.ts";
 
 // ── intervalToCron ───────────────────────────────────────────────────
 

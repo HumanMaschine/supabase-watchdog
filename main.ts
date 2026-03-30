@@ -1,12 +1,12 @@
-import { loadConfig } from "./config.ts";
-import { log } from "./logger.ts";
-import { WatchdogState } from "./state.ts";
-import { startServer } from "./server.ts";
-import { runPollCycle, intervalToCron } from "./pipeline.ts";
-import { SupabaseSource } from "./sources/mod.ts";
-import { PassthroughProcessor } from "./processors/mod.ts";
-import { TelegramChannel } from "./channels/mod.ts";
-import { parseDuration } from "./config.ts";
+import { loadConfig } from "./src/config.ts";
+import { log } from "./src/logger.ts";
+import { WatchdogState } from "./src/state.ts";
+import { startServer } from "./src/server.ts";
+import { runPollCycle, intervalToCron } from "./src/pipeline.ts";
+import { SupabaseSource } from "./src/sources/mod.ts";
+import { PassthroughProcessor } from "./src/processors/mod.ts";
+import { TelegramChannel } from "./src/channels/mod.ts";
+import { parseDuration } from "./src/config.ts";
 
 // ── Config ───────────────────────────────────────────────────────────
 

@@ -33,17 +33,19 @@ Two startup modes:
 ## Project Structure
 
 ```
-main.ts              # Thin entry point: config → mode detection → start services
-config.ts            # Config loading (YAML + env-var fallback) and validation
-types.ts             # Shared interfaces and types
-logger.ts            # Structured JSON logger
-state.ts             # Deno KV state manager (polls, health, dedup, stats)
-pipeline.ts          # Poll cycle orchestration, dedup, cron helpers
-server.ts            # HTTP server (dashboard, /healthz, webhook route, auth)
-dashboard.html       # Dashboard template (server-side rendered)
-sources/supabase.ts  # Management API poller (7 log sources)
-processors/passthrough.ts  # No-op processor
-channels/telegram.ts # Telegram bot (alerts + commands, webhook + polling modes)
+main.ts                          # Thin entry point: config → mode detection → start services
+src/
+  config.ts                      # Config loading (YAML + env-var fallback) and validation
+  types.ts                       # Shared interfaces and types
+  logger.ts                      # Structured JSON logger
+  state.ts                       # Deno KV state manager (polls, health, dedup, stats)
+  pipeline.ts                    # Poll cycle orchestration, dedup, cron helpers
+  server.ts                      # HTTP server (dashboard, /healthz, webhook route, auth)
+  dashboard.html                 # Dashboard template (server-side rendered)
+  sources/supabase.ts            # Management API poller (7 log sources)
+  processors/passthrough.ts      # No-op processor
+  channels/telegram.ts           # Telegram bot (alerts + commands, webhook + polling modes)
+tests/                           # All test files (*_test.ts)
 ```
 
 ## Commands
