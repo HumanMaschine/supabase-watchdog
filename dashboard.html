@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Supabase Watchdog</title>
+<style>
+:root {
+  --text: #1a1a1a; --text-secondary: #666; --text-muted: #999;
+  --bg: #fafafa; --bg-card: #fff; --border: #e0e0e0;
+  --status-ok: #16a34a; --status-warn: #eab308; --status-error: #ef4444;
+  --status-muted: #9ca3af; --accent: #3b82f6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #e5e5e5; --text-secondary: #a3a3a3; --text-muted: #737373;
+    --bg: #171717; --bg-card: #262626; --border: #404040;
+    --status-ok: #22c55e; --status-warn: #facc15; --status-error: #f87171;
+    --status-muted: #6b7280; --accent: #60a5fa;
+  }
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); padding: 24px; max-width: 800px; margin: 0 auto; line-height: 1.5; }
+.header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 24px; }
+.header h1 { font-size: 18px; font-weight: 600; }
+.header .meta { font-size: 12px; color: var(--text-muted); }
+.status-banner { border: 1px solid {{STATUS_COLOR}}; border-radius: 6px; padding: 16px 20px; margin-bottom: 24px; display: flex; align-items: center; gap: 12px; background: rgba({{STATUS_COLOR}}, {{STATUS_BG_OPACITY}}); }
+.status-dot { width: 14px; height: 14px; border-radius: 50%; background: {{STATUS_COLOR}}; flex-shrink: 0; }
+.status-text { font-size: 15px; font-weight: 500; }
+.status-meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+@media (max-width: 640px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+.stat-card { border: 1px solid var(--border); border-radius: 4px; padding: 12px; text-align: center; background: var(--bg-card); }
+.stat-card .number { font-size: 24px; font-weight: 700; }
+.stat-card .label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.section { margin-bottom: 24px; }
+.section h2 { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); margin-bottom: 8px; }
+.matrix { display: grid; grid-template-columns: 140px repeat(calc({{MATRIX_COLS}} - 1), 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; margin-bottom: 8px; }
+@media (max-width: 640px) { .matrix { overflow-x: auto; min-width: 500px; } .section:has(.matrix) { overflow-x: auto; } }
+.matrix-cell { background: var(--bg-card); padding: 6px 8px; font-size: 11px; text-align: center; }
+.matrix-cell.header { background: var(--bg); font-weight: 600; color: var(--text-secondary); }
+.matrix-cell.project { text-align: left; font-weight: 500; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--status-muted); background: var(--border); }
+.dot.ok { background: var(--status-ok); border-color: var(--status-ok); }
+.dot.err { background: var(--status-error); border-color: var(--status-error); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; font-weight: 600; color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; padding: 6px 8px; border-bottom: 2px solid var(--border); }
+td { padding: 8px; border-bottom: 1px solid var(--border); }
+.mono { font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace; font-size: 12px; }
+.badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; font-weight: 600; }
+.badge.ok { border: 1px solid var(--status-ok); color: var(--status-ok); }
+.badge.errors { border: 1px solid var(--status-error); color: var(--status-error); }
+.footer { font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 32px; padding-top: 12px; border-top: 1px solid var(--border); }
+.footer a { color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="header">
+  <div>
+    <h1>Supabase Watchdog</h1>
+    <div class="meta">polling every {{INTERVAL}}</div>
+  </div>
+  <div class="mono" style="font-size: 12px; color: var(--text-muted);">/healthz</div>
+</div>
+
+<div class="status-banner">
+  <div class="status-dot" aria-label="Status: {{STATUS_LABEL}}"></div>
+  <div>
+    <div class="status-text">{{STATUS_LABEL}}</div>
+    <div class="status-meta">Last poll: {{LAST_POLL_AGO}} · Uptime: {{UPTIME}}</div>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat-card"><div class="number">{{POLLS_TODAY}}</div><div class="label">Polls (24h)</div></div>
+  <div class="stat-card"><div class="number">{{ERRORS_TODAY}}</div><div class="label">Errors found</div></div>
+  <div class="stat-card"><div class="number">{{ALERTS_TODAY}}</div><div class="label">Alerts sent</div></div>
+  <div class="stat-card"><div class="number">{{PROJECT_COUNT}}</div><div class="label">Projects</div></div>
+</div>
+
+<div class="section">
+  <h2>Project Health</h2>
+  <div class="matrix">
+    <div class="matrix-cell header">Project</div>
+    {{SOURCE_HEADERS}}
+    {{MATRIX_ROWS}}
+  </div>
+</div>
+
+<div class="section">
+  <h2>Recent Polls</h2>
+  <table>
+    <thead>
+      <tr><th>Time</th><th>Duration</th><th>Status</th><th>Errors</th><th>Alerts</th></tr>
+    </thead>
+    <tbody>
+      {{POLL_ROWS}}
+    </tbody>
+  </table>
+</div>
+
+<div class="footer">
+  Supabase Watchdog · <a href="/healthz">/healthz</a>
+</div>
+</body>
+</html>
