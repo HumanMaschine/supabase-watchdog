@@ -193,6 +193,36 @@ main.ts → src/config → ─┤
 - **Channels** (`src/channels/`) — deliver alerts. Telegram (alerts + interactive bot commands).
 - **State** (`src/state.ts`) — Deno KV persistence for poll history, dedup, health status, daily stats.
 
+## Updating
+
+### Deno Deploy (one-click deploy)
+
+The deploy button clones the repo to your GitHub account. When a new version is released, pull the latest changes:
+
+```bash
+# First time: add the upstream remote
+git clone https://github.com/<your-username>/supabase-watchdog
+cd supabase-watchdog
+git remote add upstream https://github.com/HumanMaschine/supabase-watchdog.git
+
+# To update:
+git fetch upstream
+git merge upstream/main
+git push origin main
+```
+
+Deno Deploy auto-redeploys when your repo's main branch updates. Your environment variables and KV data are preserved.
+
+### Docker
+
+Pull the latest code and rebuild:
+
+```bash
+git pull
+docker build -t supabase-watchdog .
+docker compose up -d
+```
+
 ## Advanced Deployment
 
 ### Deno Deploy via CLI
