@@ -8,27 +8,28 @@ Built for Pro-plan users who need alerting without a $599+/month Team plan.
 
 ## Features
 
-- Monitors all Supabase log sources: Edge Functions, Auth, Postgres, Storage, Realtime, API Gateway, Supavisor
+- Monitors all 7 Supabase log sources: Edge Functions, Auth, Postgres, Storage, Realtime, API Gateway, Supavisor
 - Status dashboard with health matrix, poll history, and daily stats
 - `/healthz` JSON endpoint for external monitoring
 - Telegram alerts with HTML formatting and rate limiting
 - Interactive bot commands (`/check`, `/errors`, `/status`, `/help`)
 - Cross-restart deduplication via Deno KV persistence
-- Webhook support for Deno Deploy (auto or explicit mode)
+- Telegram webhook support for Deno Deploy (explicit via `WATCHDOG_TELEGRAM_MODE`)
 - Two config paths: YAML for Docker, environment variables for Deno Deploy
 - One-click deploy to Deno Deploy with guided setup page
+- Optional dashboard authentication
 - Dark mode (follows OS preference)
 
 ## Quick Start — Deno Deploy (Recommended)
 
-1. Click the **Deploy to Deno Deploy** button above
+1. Click the **Deploy on Deno** button above
 2. The app starts and shows a setup page at your deploy URL
 3. Add environment variables in the Deno Deploy dashboard:
    - `SUPABASE_ACCESS_TOKEN` — [get it here](https://supabase.com/dashboard/account/tokens)
    - `TELEGRAM_BOT_TOKEN` — [create via @BotFather](https://t.me/BotFather)
    - `TELEGRAM_CHAT_ID` — [find via @userinfobot](https://t.me/userinfobot)
-   - `WATCHDOG_PROJECTS` — format: `ref:name,ref:name`
-   - `WATCHDOG_TELEGRAM_MODE` — set to `webhook` for Deno Deploy
+   - `WATCHDOG_PROJECTS` — format: `ref:name,ref:name` (find your ref in the Supabase dashboard URL)
+   - `WATCHDOG_TELEGRAM_MODE` — set to `webhook`
    - `WATCHDOG_BASE_URL` — your deploy URL (e.g. `https://your-app.deno.dev`)
 4. The app restarts automatically and begins monitoring
 
@@ -54,136 +55,69 @@ Built for Pro-plan users who need alerting without a $599+/month Team plan.
    deno task start
    ```
 
-## Prerequisites
+   The dashboard is available at `http://localhost:8000`. Telegram bot uses long-polling by default.
 
-- [Deno](https://deno.land/) v2.x or later
-- A Supabase account with a [personal access token](https://supabase.com/dashboard/account/tokens)
-- A Telegram bot (created via [@BotFather](https://t.me/BotFather))
+## Dashboard
 
-## Setup
+The dashboard is served at `/` and shows the current state of your monitoring:
 
-### 1. Create a Telegram Bot
+- **Status banner** — Healthy (green), Late (yellow), or Down (red)
+- **Stat cards** — polls in the last 24h, errors found, alerts sent, project count
+- **Health matrix** — green/red dot per project per log source
+- **Recent polls** — last 20 poll cycles with timing and results
 
-1. Open Telegram and message [@BotFather](https://t.me/BotFather)
-2. Send `/newbot` and follow the prompts
-3. Copy the bot token (looks like `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`)
+### Health States
 
-### 2. Get Your Chat ID
+| State | Meaning |
+|-------|---------|
+| **Healthy** | Last poll succeeded within 2x the configured interval |
+| **Late** | Last poll exceeded 2x the interval, or last poll failed |
+| **Down** | 3+ consecutive failures, or no poll in 5x the interval |
 
-1. Add your bot to a group, or send it a direct message
-2. Visit `https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates`
-3. Look for `"chat":{"id": ...}` in the response — that number is your chat ID
-4. Group IDs are negative (e.g. `-1001234567890`), personal chats are positive
+### `/healthz` Endpoint
 
-### 3. Get Your Supabase Access Token
+Returns JSON with the current health status. Always accessible (not gated by dashboard auth).
 
-1. Go to [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens)
-2. Generate a new personal access token
-3. This token has full org management access — treat it as a secret
-
-### 4. Set Environment Variables
-
-Copy the example and fill in your values:
-
-```bash
-cp .env.example .env
+```json
+{
+  "status": "healthy",
+  "configured": true,
+  "last_poll": { "timestamp": "2026-03-30T10:00:00Z", "ok": true },
+  "uptime_since": "2026-03-30T08:00:00Z",
+  "projects": 2,
+  "daily_stats": { "polls": 120, "errors_found": 5, "alerts_sent": 3 }
+}
 ```
 
-Or export directly:
+When unconfigured (setup mode), returns `{ "status": "setup_required", "configured": false }`.
 
-```bash
-export SUPABASE_ACCESS_TOKEN="sbp_..."
-export TELEGRAM_BOT_TOKEN="123456:ABC..."
-export TELEGRAM_CHAT_ID="-100..."
-```
+### Dashboard Authentication
 
-### 5. Edit Configuration
+Set `WATCHDOG_DASHBOARD_TOKEN` to require a token for dashboard access. Pass it as `?token=...` in the URL or via `Authorization: Bearer ...` header. `/healthz` and `/telegram-webhook` are always accessible without a token.
 
-```bash
-cp watchdog.config.example.yaml watchdog.config.yaml
-```
+## Environment Variables
 
-At minimum, update the `projects` section with your project ref(s). Find your project ref in the Supabase dashboard URL: `https://supabase.com/dashboard/project/<ref>`.
+### Required
 
-```yaml
-projects:
-  - ref: "abcdefghijkl"
-    name: "my-app-prod"
-```
+| Variable | Description |
+|----------|-------------|
+| `SUPABASE_ACCESS_TOKEN` | Personal access token from [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens) |
+| `TELEGRAM_BOT_TOKEN` | Bot token from [@BotFather](https://t.me/BotFather) |
+| `TELEGRAM_CHAT_ID` | Target chat or group ID. Use [@userinfobot](https://t.me/userinfobot) to find yours |
+| `WATCHDOG_PROJECTS` | Comma-separated `ref:name` pairs, e.g. `abc123def456:my-app,xyz789ghi012:staging`. Only needed if not using YAML config. |
 
-## Deployment
+### Optional
 
-### Deno Deploy (Recommended)
-
-Deno Deploy natively supports `Deno.cron()`, making it the simplest deployment option.
-
-1. Install [`deployctl`](https://docs.deno.com/deploy/manual/deployctl):
-   ```bash
-   deno install -gArf jsr:@deno/deployctl
-   ```
-
-2. Set environment variables in the [Deno Deploy dashboard](https://dash.deno.com/) under your project's settings
-
-3. Deploy:
-   ```bash
-   deno task deploy
-   ```
-
-   Or link your GitHub repo in the Deno Deploy dashboard for automatic deploys on push.
-
-### Docker
-
-Build and run with Docker:
-
-```bash
-# Build the image
-docker build -t supabase-watchdog .
-
-# Run with env vars, mounted config, and persistent KV storage
-docker run -d \
-  --name watchdog \
-  -e SUPABASE_ACCESS_TOKEN=sbp_... \
-  -e TELEGRAM_BOT_TOKEN=123456:ABC... \
-  -e TELEGRAM_CHAT_ID=-100... \
-  -v ./watchdog.config.yaml:/app/watchdog.config.yaml:ro \
-  -v watchdog-data:/app/.deno-kv \
-  supabase-watchdog
-```
-
-**Docker Compose example:**
-
-```yaml
-services:
-  watchdog:
-    build: .
-    restart: unless-stopped
-    environment:
-      - SUPABASE_ACCESS_TOKEN=sbp_...
-      - TELEGRAM_BOT_TOKEN=123456:ABC...
-      - TELEGRAM_CHAT_ID=-100...
-    volumes:
-      - ./watchdog.config.yaml:/app/watchdog.config.yaml:ro
-      - watchdog-data:/app/.deno-kv
-
-volumes:
-  watchdog-data:
-```
-
-> **Note:** The `watchdog-data` volume persists poll history, dedup state, and health status across container restarts. Without it, KV data resets on every restart.
-
-```bash
-docker compose up -d
-```
-
-### Local / Any Deno Runtime
-
-```bash
-# Development (with watch mode — restarts on file changes)
-deno task dev
-
-# Production
-deno task start
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WATCHDOG_TELEGRAM_MODE` | `polling` | `webhook` for Deno Deploy, `polling` for Docker/local |
+| `WATCHDOG_BASE_URL` | — | Public URL for webhook mode (e.g. `https://your-app.deno.dev`). Required when mode is `webhook`. |
+| `WATCHDOG_DASHBOARD_TOKEN` | — | If set, dashboard requires this token for access |
+| `WATCHDOG_INTERVAL` | `5m` | Polling interval (e.g. `5m`, `1h`, `2h30m`) |
+| `WATCHDOG_SOURCES` | all 7 | Comma-separated log sources to monitor |
+| `WATCHDOG_MIN_STATUS` | `500` | Minimum HTTP status code to treat as error |
+| `WATCHDOG_IGNORE_PATTERNS` | — | Comma-separated patterns to ignore (substring match) |
+| `WATCHDOG_MAX_ALERTS` | `20` | Max alerts per poll cycle |
 
 ## Bot Commands
 
@@ -195,23 +129,41 @@ deno task start
 | `/status` | Show monitoring status | `/status` |
 | `/help` | List available commands | `/help` |
 
-## Configuration Reference
+## Configuration
 
-All configuration lives in `watchdog.config.yaml`. Environment variables are referenced with `${VAR_NAME}` syntax and resolved at startup.
+### YAML Config (Docker / Local)
+
+For Docker and local deployments, configuration lives in `watchdog.config.yaml`. Environment variables are referenced with `${VAR_NAME}` syntax and resolved at startup.
+
+```bash
+cp watchdog.config.example.yaml watchdog.config.yaml
+```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `supabase.access_token` | string (env ref) | **required** | Supabase personal access token |
 | `projects[].ref` | string | **required** | 12+ char project reference ID |
 | `projects[].name` | string | **required** | Human-readable project name |
-| `projects[].severity` | string | (none) | Minimum severity to alert: `info`, `warning`, `error`, `critical` |
-| `polling.interval` | duration | `"5m"` | Polling frequency (e.g., `"5m"`, `"1h"`) |
-| `polling.sources` | string[] | all 7 sources | Which log sources to query |
+| `polling.interval` | duration | `"5m"` | Polling frequency |
+| `polling.sources` | string[] | all 7 | Which log sources to query |
 | `filters.min_status_code` | number | `500` | Minimum HTTP status code for errors |
-| `filters.ignore_patterns` | string[] | `[]` | Patterns to exclude (substring match) |
+| `filters.ignore_patterns` | string[] | `[]` | Patterns to exclude |
 | `filters.max_alerts_per_interval` | number | `20` | Max alerts per poll cycle |
 | `channels.telegram.bot_token` | string (env ref) | **required** | Telegram bot token |
 | `channels.telegram.chat_id` | string (env ref) | **required** | Target chat/group ID |
+
+### Webhook Mode (Deno Deploy)
+
+Deno Deploy does not support long-polling. Set these env vars for webhook-based bot commands:
+
+```
+WATCHDOG_TELEGRAM_MODE=webhook
+WATCHDOG_BASE_URL=https://your-app.deno.dev
+```
+
+The app registers a webhook with Telegram on startup and receives bot commands via `POST /telegram-webhook`. Webhook requests are verified using a secret derived from your bot token.
+
+When switching from webhook to polling mode (or vice versa), the app automatically cleans up the previous transport on startup.
 
 ### Available Log Sources
 
@@ -242,17 +194,73 @@ main.ts → src/config → ─┤
 - **Channels** (`src/channels/`) — deliver alerts. Telegram (alerts + interactive bot commands).
 - **State** (`src/state.ts`) — Deno KV persistence for poll history, dedup, health status, daily stats.
 
+## Advanced Deployment
+
+### Deno Deploy via CLI
+
+If you prefer manual deploys over the one-click button:
+
+```bash
+deno install -gArf jsr:@deno/deployctl
+deployctl deploy --prod main.ts
+```
+
+Set environment variables in the [Deno Deploy dashboard](https://dash.deno.com/) under your project settings.
+
+### Docker
+
+```bash
+docker build -t supabase-watchdog .
+
+docker run -d \
+  --name watchdog \
+  -e SUPABASE_ACCESS_TOKEN=sbp_... \
+  -e TELEGRAM_BOT_TOKEN=123456:ABC... \
+  -e TELEGRAM_CHAT_ID=-100... \
+  -v ./watchdog.config.yaml:/app/watchdog.config.yaml:ro \
+  -v watchdog-data:/app/.deno-kv \
+  supabase-watchdog
+```
+
+### Docker Compose
+
+```yaml
+services:
+  watchdog:
+    build: .
+    restart: unless-stopped
+    environment:
+      - SUPABASE_ACCESS_TOKEN=sbp_...
+      - TELEGRAM_BOT_TOKEN=123456:ABC...
+      - TELEGRAM_CHAT_ID=-100...
+    volumes:
+      - ./watchdog.config.yaml:/app/watchdog.config.yaml:ro
+      - watchdog-data:/app/.deno-kv
+
+volumes:
+  watchdog-data:
+```
+
+> **Note:** The `watchdog-data` volume persists poll history, dedup state, and health status across container restarts. Without it, KV data resets on every restart.
+
+### Development
+
+```bash
+deno task dev    # Watch mode — restarts on file changes
+deno task test   # Run all tests
+```
+
 ## Troubleshooting
 
 **Bot not receiving messages / commands not working**
 - Make sure you sent a message to the bot first (or added it to the group) before checking `getUpdates`
 - Verify `TELEGRAM_CHAT_ID` matches the chat where you're sending commands
 - If using a group, make sure the bot has permission to read messages (disable privacy mode via BotFather: `/setprivacy` → Disable)
+- On Deno Deploy, ensure `WATCHDOG_TELEGRAM_MODE=webhook` and `WATCHDOG_BASE_URL` are set
 
 **"environment variable is not set" error on startup**
 - Ensure required env vars are exported: `SUPABASE_ACCESS_TOKEN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `WATCHDOG_PROJECTS` (if not using YAML config)
 - If using Docker, pass them with `-e` flags or in your compose file
-- Check for typos in your `watchdog.config.yaml` `${...}` references
 
 **No alerts received but no errors either**
 - Run `/check` in Telegram to trigger an immediate poll
