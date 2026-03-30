@@ -4,7 +4,7 @@ Lightweight error monitoring for Supabase projects. Polls the Supabase Managemen
 
 Built for Pro-plan users who need alerting without a $599+/month Team plan.
 
-[![Deploy to Deno Deploy](https://deno.com/deno-deploy-button.svg)](https://dash.deno.com/new?url=https://github.com/HumanMaschine/supabase-watchdog&entrypoint=main.ts)
+[![Deploy on Deno](https://deno.com/button)](https://console.deno.com/new?clone=https://github.com/HumanMaschine/supabase-watchdog)
 
 ## Features
 
