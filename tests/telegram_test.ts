@@ -1,7 +1,7 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { TelegramChannel } from "./channels/telegram.ts";
-import { WatchdogState } from "./state.ts";
-import type { WatchdogConfig } from "./types.ts";
+import { TelegramChannel } from "../channels/telegram.ts";
+import { WatchdogState } from "../state.ts";
+import type { WatchdogConfig } from "../types.ts";
 
 function makeConfig(): WatchdogConfig {
   return {

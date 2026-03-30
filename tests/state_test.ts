@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { WatchdogState } from "./state.ts";
+import { WatchdogState } from "../state.ts";
 
 Deno.test("state: persistLastPollTime + getLastPollTime round-trip", async () => {
   const state = new WatchdogState();
