@@ -114,17 +114,24 @@ export async function runPollCycle(
   };
 
   await state.logPollCycle(record);
-  await state.persistLastPollTime(cycleStart, ok);
   await state.updateDailyStats(errorsFound, alertsSent);
+
+  // Only advance lastPollTime if the poll fully succeeded.
+  // If any source query failed (e.g. 429), keep the old lastPollTime
+  // so the next cycle re-queries the full window and picks up missed logs.
+  const sourceHadFailure = "_lastPollHadFailure" in source && (source as { _lastPollHadFailure: boolean })._lastPollHadFailure;
+  const newLastPollTime = (ok && !sourceHadFailure) ? cycleStart : lastPollTime;
+  await state.persistLastPollTime(newLastPollTime, ok);
 
   log.info("poll_cycle_complete", {
     duration_ms: durationMs,
     errors_found: errorsFound,
     alerts_sent: alertsSent,
     ok,
+    partial_failure: sourceHadFailure,
   });
 
-  return { newLastPollTime: cycleStart, errorsFound, alertsSent };
+  return { newLastPollTime, errorsFound, alertsSent };
 }
 
 // ── Cron helpers ─────────────────────────────────────────────────────

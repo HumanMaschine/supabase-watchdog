@@ -19,39 +19,23 @@ if (!result.configured) {
     mode: "setup",
     missing: result.missing,
   });
-
-  // Nothing else to start — user needs to add env vars
 } else {
   // MONITORING MODE: full pipeline + dashboard
   const config = result.config;
+  const isDenoDeply = !!Deno.env.get("DENO_DEPLOYMENT_ID");
 
   log.info("monitoring_mode", {
     projects: config.projects.length,
     interval: config.polling.interval,
     telegram_mode: config.telegram_mode,
+    deno_deploy: isDenoDeply,
   });
 
   // Warn if polling mode on Deno Deploy (doesn't work due to overlapping isolates)
-  const isDenoDeply = !!Deno.env.get("DENO_DEPLOYMENT_ID");
   if (isDenoDeply && config.telegram_mode === "polling") {
     log.warn("polling_on_deploy", {
       error: "Polling mode is not supported on Deno Deploy. Telegram bot commands will not work reliably. Set WATCHDOG_TELEGRAM_MODE=webhook and WATCHDOG_BASE_URL to your deploy URL.",
     });
-  }
-
-  // Token validation
-  try {
-    const resp = await fetch("https://api.supabase.com/v1/projects", {
-      headers: { Authorization: `Bearer ${config.supabase.access_token}` },
-    });
-    if (!resp.ok) {
-      log.warn("token_validation_failed", { status: resp.status });
-    } else {
-      log.info("token_validated");
-    }
-    await resp.text();
-  } catch (err) {
-    log.warn("token_validation_error", { error: String(err) });
   }
 
   // Initialize state (KV)
@@ -122,6 +106,11 @@ if (!result.configured) {
       : undefined,
   });
 
-  // Initial poll (uses same lock as cron — no overlap possible)
-  await triggerPoll();
+  // Initial poll: skip on Deno Deploy to avoid burning rate limit budget on cold starts.
+  // The first cron run (within 5 minutes) covers logs from startup onward.
+  if (!isDenoDeply) {
+    await triggerPoll();
+  } else {
+    log.info("initial_poll_skipped", { reason: "Deno Deploy — cron will handle first poll" });
+  }
 }

@@ -141,9 +141,17 @@ export class SupabaseSource implements Source {
     const effectiveSince = since < earliest ? earliest : since;
 
     const allEvents: ErrorEvent[] = [];
+    let isFirst = true;
+    let hadFailure = false;
 
     for (const project of this.projects) {
       for (const logSource of this.sources) {
+        // Space out API calls to stay within the logs.all 30 req/min budget.
+        if (!isFirst) {
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+        isFirst = false;
+
         try {
           const events = await this.queryLogSource(
             project.ref,
@@ -154,6 +162,7 @@ export class SupabaseSource implements Source {
           );
           allEvents.push(...events);
         } catch (error) {
+          hadFailure = true;
           console.warn(
             `[watchdog] Failed to query ${logSource} for ${project.name}: ${error}`,
           );
@@ -161,8 +170,14 @@ export class SupabaseSource implements Source {
       }
     }
 
+    // Expose whether any source failed (used by pipeline to decide lastPollTime)
+    this._lastPollHadFailure = hadFailure;
+
     return this.applyIgnorePatterns(allEvents);
   }
+
+  /** Whether the most recent poll() had any source query failures. */
+  _lastPollHadFailure = false;
 
   private buildQuery(logSource: string): string {
     const template = ERROR_QUERIES[logSource];
@@ -185,11 +200,26 @@ export class SupabaseSource implements Source {
     url.searchParams.set("iso_timestamp_start", since.toISOString());
     url.searchParams.set("iso_timestamp_end", until.toISOString());
 
-    const response = await fetch(url.toString(), {
+    let response = await fetch(url.toString(), {
       headers: {
         "Authorization": `Bearer ${this.accessToken}`,
       },
     });
+
+    // Retry once on 429 with backoff
+    if (response.status === 429) {
+      const retryAfter = response.headers.get("retry-after");
+      const waitMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : 2000;
+      await response.text(); // consume body
+      console.warn(`[watchdog] Rate limited (429), retrying in ${waitMs}ms`);
+      await new Promise((r) => setTimeout(r, waitMs));
+
+      response = await fetch(url.toString(), {
+        headers: {
+          "Authorization": `Bearer ${this.accessToken}`,
+        },
+      });
+    }
 
     if (!response.ok) {
       throw new Error(
