@@ -24,6 +24,12 @@ export class WatchdogState {
 
   async init(): Promise<void> {
     try {
+      if (typeof Deno.openKv !== "function") {
+        log.warn("kv_unavailable", { error: "Deno.openKv is not available in this runtime. KV requires --unstable-kv flag (local) or Deno Deploy with KV enabled." });
+        this.available = false;
+        return;
+      }
+
       this.kv = await Deno.openKv();
       this.available = true;
 

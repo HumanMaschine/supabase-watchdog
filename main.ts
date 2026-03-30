@@ -96,7 +96,11 @@ if (!result.configured) {
       : undefined,
   });
 
-  // Schedule cron
+  // Initial poll (run BEFORE scheduling cron to avoid race condition)
+  const initial = await runPollCycle(source, processor, channel, state, lastPollTime, config);
+  lastPollTime = initial.newLastPollTime;
+
+  // Schedule cron AFTER initial poll completes
   const cronExpression = intervalToCron(config.polling.interval);
   Deno.cron("watchdog-poll", cronExpression, async () => {
     const result = await runPollCycle(source, processor, channel, state, lastPollTime, config);
@@ -104,8 +108,4 @@ if (!result.configured) {
   });
 
   log.info("cron_scheduled", { expression: cronExpression });
-
-  // Initial poll
-  const initial = await runPollCycle(source, processor, channel, state, lastPollTime, config);
-  lastPollTime = initial.newLastPollTime;
 }
