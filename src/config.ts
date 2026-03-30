@@ -212,6 +212,44 @@ function validateInt(value: string, name: string): number {
   return parsed;
 }
 
+// ── Deno Deploy detection + Telegram mode resolution ────────────────
+
+function isDenoDeply(): boolean {
+  return !!(Deno.env.get("DENO_DEPLOY") || Deno.env.get("DENO_DEPLOYMENT_ID"));
+}
+
+/**
+ * Resolve Telegram transport mode.
+ * - Explicit WATCHDOG_TELEGRAM_MODE always wins
+ * - On Deno Deploy, default to "webhook" (polling doesn't work)
+ * - Otherwise, default to "polling"
+ */
+function resolveTelegramMode(): "webhook" | "polling" {
+  const explicit = Deno.env.get("WATCHDOG_TELEGRAM_MODE");
+  if (explicit) {
+    if (explicit !== "webhook" && explicit !== "polling") {
+      throw new Error(
+        `WATCHDOG_TELEGRAM_MODE must be "webhook" or "polling", got "${explicit}"`,
+      );
+    }
+    return explicit;
+  }
+  return isDenoDeply() ? "webhook" : "polling";
+}
+
+/**
+ * Validate that webhook mode has a base URL.
+ * Throws if mode is "webhook" but WATCHDOG_BASE_URL is not set.
+ */
+function validateWebhookConfig(mode: "webhook" | "polling", baseUrl?: string): void {
+  if (mode === "webhook" && !baseUrl) {
+    throw new Error(
+      "Webhook mode requires WATCHDOG_BASE_URL (e.g. https://your-app.deno.dev). " +
+      "Set it in your environment variables.",
+    );
+  }
+}
+
 /** Required env vars for the env-var config path. */
 const REQUIRED_ENV_VARS = [
   "SUPABASE_ACCESS_TOKEN",
@@ -279,15 +317,11 @@ function buildConfigFromEnv(): WatchdogConfig {
   const ignoreRaw = Deno.env.get("WATCHDOG_IGNORE_PATTERNS");
   const maxAlerts = Deno.env.get("WATCHDOG_MAX_ALERTS");
 
-  const telegramModeRaw = Deno.env.get("WATCHDOG_TELEGRAM_MODE") || "polling";
-  if (telegramModeRaw !== "webhook" && telegramModeRaw !== "polling") {
-    throw new Error(
-      `WATCHDOG_TELEGRAM_MODE must be "webhook" or "polling", got "${telegramModeRaw}"`,
-    );
-  }
-  const telegramMode = telegramModeRaw;
+  const telegramMode = resolveTelegramMode();
   const baseUrl = Deno.env.get("WATCHDOG_BASE_URL");
   const dashboardToken = Deno.env.get("WATCHDOG_DASHBOARD_TOKEN");
+
+  validateWebhookConfig(telegramMode, baseUrl);
 
   const config: WatchdogConfig = {
     supabase: { access_token: accessToken },
@@ -355,9 +389,11 @@ export async function loadConfig(
 
     // Add v0.2 fields from env vars (these are never in YAML)
     const config = interpolated as unknown as WatchdogConfig;
-    config.telegram_mode = (Deno.env.get("WATCHDOG_TELEGRAM_MODE") || "polling") as "webhook" | "polling";
+    config.telegram_mode = resolveTelegramMode();
     config.base_url = Deno.env.get("WATCHDOG_BASE_URL");
     config.dashboard_token = Deno.env.get("WATCHDOG_DASHBOARD_TOKEN");
+
+    validateWebhookConfig(config.telegram_mode, config.base_url);
 
     return { configured: true, config };
   } catch (err) {

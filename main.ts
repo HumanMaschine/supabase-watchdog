@@ -22,7 +22,7 @@ if (!result.configured) {
 } else {
   // MONITORING MODE: full pipeline + dashboard
   const config = result.config;
-  const isDenoDeply = !!Deno.env.get("DENO_DEPLOYMENT_ID");
+  const isDenoDeply = !!(Deno.env.get("DENO_DEPLOY") || Deno.env.get("DENO_DEPLOYMENT_ID"));
 
   log.info("monitoring_mode", {
     projects: config.projects.length,
@@ -30,13 +30,6 @@ if (!result.configured) {
     telegram_mode: config.telegram_mode,
     deno_deploy: isDenoDeply,
   });
-
-  // Warn if polling mode on Deno Deploy (doesn't work due to overlapping isolates)
-  if (isDenoDeply && config.telegram_mode === "polling") {
-    log.warn("polling_on_deploy", {
-      error: "Polling mode is not supported on Deno Deploy. Telegram bot commands will not work reliably. Set WATCHDOG_TELEGRAM_MODE=webhook and WATCHDOG_BASE_URL to your deploy URL.",
-    });
-  }
 
   // Initialize state (KV)
   const state = new WatchdogState();
@@ -63,8 +56,9 @@ if (!result.configured) {
     config,
   };
 
-  if (config.telegram_mode === "webhook" && config.base_url) {
-    await channel.setupWebhook(botDeps, config.base_url);
+  if (config.telegram_mode === "webhook") {
+    // base_url is guaranteed by config validation (validateWebhookConfig)
+    await channel.setupWebhook(botDeps, config.base_url!);
   } else {
     await channel.deleteWebhook();
     channel.startPolling(botDeps);

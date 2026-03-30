@@ -29,7 +29,6 @@ Free, open-source error monitoring for Supabase projects. Get Telegram alerts on
    - `TELEGRAM_BOT_TOKEN` — [create via @BotFather](https://t.me/BotFather)
    - `TELEGRAM_CHAT_ID` — [find via @userinfobot](https://t.me/userinfobot)
    - `WATCHDOG_PROJECTS` — format: `ref:name,ref:name` (find your ref in the Supabase dashboard URL)
-   - `WATCHDOG_TELEGRAM_MODE` — set to `webhook`
    - `WATCHDOG_BASE_URL` — your deploy URL (e.g. `https://your-app.deno.dev`)
 6. The app restarts automatically and begins monitoring
 
